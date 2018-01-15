@@ -1,0 +1,350 @@
+Filename: waterfilling-balancing-with-max-diversity.txt
+Title: Waterfilling
+Authors: Florentin Rochet and Olivier Pereira
+Reviewed by (thanks!): George Kadianakis, Edouard Cuvelier, teor
+Created:  Jan 2018
+Status: Open                                                          
+
+0  Motivation
+
+  An adversary who monitors the entry and exit of a Tor communication
+  path is usually able to de-anonymize that communication by traffic
+  correlation. In order to limit the number of users that a single
+  corrupted entry node could attack, the users keep using the same entry
+  node, also called a "guard" for long periods of time: since guard
+  rotation is limited, the users are less likely to use a corrupted
+  guard at some point in their communication. In the current design, the
+  amount of traffic that a given guard sees is directly proportional to
+  the bandwidth that is provided by this guard. As a result, the few
+  guards offering the highest amount of bandwidth become very attractive
+  targets for an attacker.
+
+  Waterfilling is a new path selection mechanism designed to make the
+  guard selection even more efficient: if an adversary wants to profile
+  more users, she has to increase her bandwidth _and_ increase the
+  number of relays injected/hacked into the network.
+
+  Waterfilling mitigates the risks of end-to-end traffic correlation
+  by balancing the load as evenly as possible on endpoints of user
+  circuits. More precisely, waterfilling modifies the probability
+  distribution according to which users select guard nodes my making
+  that distribution closer to the uniform distribution, without
+  impacting the performance of the Tor network.
+
+1  Overview
+
+  The current Tor path selection algorithm is designed to satisfy two
+  important properties:
+
+  1) Each relay should handle a fraction of connections that is
+  proportional to its consensus weight.
+
+  2) The nodes in each circuit position (entry-middle-exit) should
+  be able to handle the same volume of connections.
+
+  Hence, in addition to select paths in a probabilistic manner, the
+  path selection algorithm is responsible for balancing the network,
+  that is, making sure that enough consensus weight is made available in
+  all the positions.  The current balance of the network is decided by
+  the bandwidth-weights (see dir-spec.txt section 3.8.3.  or/and the
+  Waterfilling PETS2017 paper
+  https://petsymposium.org/2017/papers/issue2/paper05-2017-2-source.pdf).
+  This balance does not achieve maximum diversity in end-positions of
+  user paths: the same network throughput could be achieved by
+  decreasing the use of high consensus weight relays and increasing the
+  use of lower consensus weight relays in the guard position, instead of
+  using these relays in a way that is just proportional to their
+  consensus weight. Such a change would make top relays less attractive
+  targets to adversaries, and would increase the number of relays that
+  need to be
+  compromised in order to obtain a given probability of mounting a
+  successful correlation attack.
+
+  Our proposal only modifies the balance between the relays in a given
+  position in the network. It does not modify, and actually takes as
+  its starting point, any allocation mechanism used to decide the
+  consensus weight that is allocated in guard, middle and exit
+  positions.  As a consequence, the changes that we propose are quite
+  minimal in terms of code base and performance and, in particular, they
+  do not interfere with prop 265.
+
+2  Design
+
+  Correlation attacks require to control guard and exit nodes, but the
+  scarcity of exit consensus weight is such that there is no real
+  freedom in the way to use it.  As a result, the Waterfilling proposal
+  focuses on the guard position. However, it could be easily extended to
+  the exit position if, someday, nodes in that position happen not to be
+  exploited to their full capacity at the exit position. Indeed, relays
+  flagged as Exits are currently using all their resource at the exit
+  position due to bandwidth-weights Wee and Wed being maximum.
+
+  _Recall_: Tor currently computes bandwidth-weights in order to balance
+  the consensus weight made available by nodes between the different
+  path positions. In particular the Wgg weight indicates to *clients* how
+  often they should select guards in the guard position in *circuits*.
+  Consequently, Wgg can be seen as the proportion of guards consensus
+  weight which should be used for entry traffic (the rest being normally
+  devoted to the middle position). This proportion is the same for all
+  guards.
+  
+  _Proposal_: We use Tor's bandwidth-weight Wgg as the basis of
+  Waterfilling. This Wgg, combined with the total consensus weight made
+  available by all guards, defines the total consensus weight made
+  available in the guard position. In order to allocate this bandwidth,
+  the Waterfilling proposal proceeds by "raising the water level": it
+  requires all guard relays to devote to their guard role all the
+  consensus weight that they have, until a so-called "water level" is
+  reached.  This water level is positioned in such a way that the total
+  consensus weight provided in the guard position is exactly the same as
+  the one that is currently made available in the Tor network. 
+
+  As a result, guards offering a small amount of consensus weight, below
+  the water level, will fully allocate their consensus weight to guard
+  traffic, while all the guards offering a consensus weight that is
+  higher than the water level will limit their guard consensus weight to
+  the water level, and allocate the rest to the middle traffic (assuming
+  that they are not exit flagged as Exits). 
+
+  Concretely, we compute the weight Wgg_i for each guard-flagged relay_i
+  as follows:
+
+  1) Sort all the guard relays by consensus weight in decreasing order
+  (i.e. the i-th guard has more consensus weight than the i+1-th).
+
+     (i) BW_i >= BW_{i+1}
+
+  2) Let K be the total number of guards, BW_i be the consensus weight
+  of the i-th ranked guard and G be the total consensus weight that
+  guards make available.  Compute a "pivot" N and the weight Wgg_i
+  assigned to relay_i in such a way that:
+     
+     (a) Wgg_i * BW_i == Wgg_{i+1} * BW_{i+1} forall i in [1, N]
+     (b) Wgg_i == 1 forall i in [N+1, K] 
+     (c) sum_{i=1}^{K} Wgg_i*BW_i = Wgg*G  (Wgg is provided by Tor)
+
+  As a result of this process, each guard ranked before the pivot N
+  dedicates the same consensus weight to its guard role (equation (a))
+  -- we say that these guards achieve the water level, while each guard
+  ranked after the pivot N dedicates its full consensus weight to the
+  guard role (equation (b)) -- they are below the water level.  Equation
+  (c) makes sure that the pivot and the water level are positioned in a
+  way that guarantees that the total amount of consensus weight
+  dedicated to the guard position is the same as before. In practice,
+  the value of N can be efficiently computed by binary search on
+  Equation (c), and the value of the Wgg_i then immediately follows from
+  Equations (a) and (b). 
+
+  Once Wgg_i is computed, we can compute Wmg_i = 1 - Wgg_i, which
+  allocates to the middle position all the consensus weight that is left
+  above the water level in the first N relays.  The bigger the node is,
+  the more it contributes to the middle position compared to the others.
+  A visual representation of this process is available in Figure 1 in
+  the Waterfilling paper.
+
+2.1 Going further by tweaking original bandwidth-weights computation
+
+  As explained above, our Waterfilling equations are based on: 1) the
+  Wgg weight computed by Tor 2) the assumption that the consensus weight
+  available in exit is scarce, i.e., it is lower than the one available
+  for guard (and middle) positions.
+  
+  The second point is satisfied most of the time in Tor, and we do take
+  it for granted here.
+  
+  We, however, observe that Waterfilling could be made even more
+  effective by applying a minor change in the way Tor computes the
+  Wgg.  For the moment, Tor computes Wgg in such a way that the same
+  total consensus weight is allocated to the guard and middle positions.
+  As a result, both positions are in excess compared to the exit
+  position.
+
+  The water level could be decreased and, as a result, the uniformity
+  of the guard selection process could be improved, by computing Wgg
+  in a way that allocates the same total consensus weight to the guard
+  and exit positions, putting the middle position as the only position
+  in excess.
+  
+  We show in the performance section of the Waterfilling paper that
+  scarcity on two positions does not reduce performance compared to
+  vanilla bandwidth-weights.
+
+3  Security implications
+
+  An analysis of the security impact of the Waterfilling proposal is
+  made in Section 6 of the Waterfilling paper. It studies the
+  expectation of the number of relays that an adversary needs to
+  control in order to mount a successful correlation attack at a given
+  time, as well as an analysis of the evolution of the time until
+  first path compromise, based on TorPS.
+
+  Given that the distribution produced by Waterfilling is closer to
+  the uniform distribution, the use of Waterfilling increases the
+  expectation of the number of relays that an adversary needs to
+  compromise in order mount a successful correlation
+  attack. Concretely, and based on real data from 2015, this
+  expectation increases by approximately 150 relays (about 25%).
+
+  Waterfilling also considerably decreases the benefits of
+  compromising a top Tor relay: based on the same data, we computed
+  that around 35 relays need to be compromised in order to obtain the
+  benefits that would be obtained today by compromising Tor's top
+  guard. On the flip side, the total consensus weight that those 35
+  relays would need to provide is 38% smaller than the one of the top
+  relay, if they are designed to offer a consensus weight that is just
+  at the water level. Moreover, these 35 relays used to equalize the
+  impact of the current top guard is the lower bound. In practice, the
+  adversary needs to predict the water level of all upcoming consensus
+  to stay below it and not to waste consensus weight. A safe manner to
+  achieve this is to split the resource into way more than 35 relays. At
+  some point, the adversary would struggle between the need to stay off
+  the radar with many machines and the waste of consensus weight if she
+  has not enough of them.
+
+4  Performance implications
+
+  This proposal aims at improving the anonymity provided by the Tor
+  network without impacting its performance negatively.
+
+  From a theoretical viewpoint, since Waterfilling does not change the
+  amount of consensus weight dedicated to the guard, middle and exit
+  position, we should not observe any difference compared to vanilla
+  Tor. The intuition is that, even if the top consensus weight relays
+  that are currently affected to the guard position are less likely to
+  be selected as guards, they become more likely to be selected as
+  middle nodes, hence maintaining their contribution to fast Tor
+  circuits.
+
+  We confirmed this intuition by running Shadow experiments with a Tor
+  implementation of Waterfilling. Our results give the same CDF for
+  time-to-fist-byte (ttfb) and time-to-last-byte (ttlb) metrics under
+  different network loads. We have run two classes of experiments, one
+  in a low network load and one with an heavy loaded network
+  proportionnaly close to the throughput of the real Tor nework.  Of
+  course, these results depend on the accuracy with which the behavior
+  of current relays is measured and reported. 
+
+  However, an interesting feature of the Waterfilling proposal is that
+  it is fully compatible with vanilla Tor: some Tor clients may run
+  the current Tor path selection algorithm, and others may run
+  Waterfilling without impacting the performance. This makes an
+  experimental deployment fairly easy to operate at a small or medium
+  scale, while maintaining the possibility to fall back to vanilla Tor
+  if an unexpected behavior is detected. 
+
+5 Implementation
+
+5.1 Overview
+
+  Most of the implementation of Waterfilling is on the directory
+  authority side: only a few changes are needed on the client side and
+  no change is needed on the relay side. A prototype implementation is
+  available at https://github.com/frochet/waterfilling. Here is how it
+  works:
+
+  Every hour, directory authorities vote on a new consensus. Once the
+  votes are collected, the dirauths produce a deterministic network
+  consensus document containing information about each relay,
+  including the waterfilling bandwidth-weights produced from the
+  equations described above. e.g.:
+  
+  ...(more relays)
+  r relayguard34 PPTH75+WkHl1GGw07DRE/S+JNdo 1970-01-01 00:02:37
+  51.254.112.52 9111 9112 
+  m lp08MLTivsSZPhpZQy88i8NPeBNx10tPKBpHZsM3gYM
+  s Fast Guard HSDir Running Stable V2Dir Valid
+  v Tor 0.2.6.7
+  w Bandwidth=10200
+  wfbw wgg=8029 wmg=1971.
+  r 4uthority3 PYnzXGQ+67m0WtO64qtJkwsUzME 1970-01-01 00:02:33 11.0.5.71
+  9111 9112 
+  m d8G2/8UQzAN3a9DixCtmaivhfUFTvlFKAxCAV1xHVKk
+  s Authority Fast Guard HSDir Running Stable V2Dir Valid
+  v Tor 0.2.6.7
+  w Bandwidth=1890
+  wfbw wgg=10000 wmg=0.
+  ...(more relays)
+
+  In this example, we see two relays having the Guard flag and their new
+  waterfilling bandwidth-weights allocation given on the lines starting
+  with wfbw. The first relay has a high consensus weight (Bandwidth),
+  above the water level (was around 8k for this consensus), and shares
+  that consensus weight between the guard and the middle positions, as
+  indicated by the wgg and wmg variables.  The second relay has a lower
+  consensus weight, below the water level, and fully uses it for guard
+  traffic.
+
+  If no wgg or wmg weights are specified for a given relay, the
+  vanilla bandwidth-weights are used, as provided at the bottom of the
+  consensus.
+
+  Eventually, a modification of the client code is needed in order to
+  parse and use the waterfilling weights. The changes are
+  straightforward with a few lines of codes in existing functions.
+
+6 Deployment discussion
+
+  Deploying a new feature that has a central role in security and
+  performance of the network can be difficult due to the distributed
+  nature of the network. Hopefully, this proposal does not suffer from
+  such issue. We give here some arguments supporting this claim.
+
+  - About performance: The balancing equations designed by the current
+    path selection are kept untouched. Hence mixing a set of clients
+    using Waterfilling in the network and another set of clients using
+    the vanilla path selection is not a problem: they will both
+    enforce the same allocation of total consensus weight between the
+    different path positions. We confirmed this with experiments in
+    Shadow.
+
+  - About user security: A co-existence of path selection algorithms
+    may be a threat to anonymity if the transition is not handled
+    carefully. A set of compromised middle relays may distinguish
+    users with Waterfilling configuration from others. This is a
+    problem if the anonymity set is not large enough. Hopefully,
+    "large enough" can be ensured with a consensus parameter that only
+    enables this feature when enough users have updated their client.
+
+7 Note
+
+Some important questions raised on the mailing list:
+
+- How can we determine whether it is better for security in practice?
+
+  Whether this proposal is indeed better for security can be
+  summarized with the following fact: if the adversary wants to profile
+  more users against a Tor network using this Proposal, she has to
+  increase her consensus weight _and_ increase the number of IPs she
+  uses in the network. And, this is not true for the current path
+  selection (she has to increase bandwidth).
+
+  Moreover, the paper linked to this proposal offers a detailed security
+  analysis.
+
+- How can we determine if it is faster or slower in practice?
+
+  Well, if Shadow missed capturing some important performance impact
+  within our simulations, then looking at the output of
+  metrics.torproject.org after such proposal is deployed, as well as
+  asking relay operators if they notice some burden is probably the best
+  we can do.
+ 
+- How can we work out if someone is trying to game the system?
+
+  The optimal strategy for an adversary is explained in the paper. It
+  might be possible to detect an adversary applying the optimal
+  strategy, since we know it but it was out of the scope of the paper.
+  
+  E.g., a bunch of new relays appearing with a consensus weight at the
+  water level could be considered suspicious.
+
+7.1 Unanswered questions
+
+  - What about the feedback loop between this new allocation system
+  and the bandwidth authorities?
+
+  - Should bandwidth authority clients use the new system?
+
+  - How do we report on the new system?
+
+                                                                       
