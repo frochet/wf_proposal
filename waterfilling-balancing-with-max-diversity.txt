@@ -121,7 +121,8 @@ Status: Open
      
      (a) Wgg_i * BW_i == Wgg_{i+1} * BW_{i+1} forall i in [1, N]
      (b) Wgg_i == 1 forall i in [N+1, K] 
-     (c) sum_{i=1}^{K} Wgg_i*BW_i = Wgg*G  (Wgg is provided by Tor)
+     (c) sum_{i=1}^{K} Wgg_i*BW_i == Wgg*G  (Wgg is provided by Tor)
+     (d) Wgg_N * BW_N >= Wgg_{N+1} * BW_{N+1}
 
   As a result of this process, each guard ranked before the pivot N
   dedicates the same consensus weight to its guard role (equation (a))
@@ -133,7 +134,8 @@ Status: Open
   dedicated to the guard position is the same as before. In practice,
   the value of N can be efficiently computed by binary search on
   Equation (c), and the value of the Wgg_i then immediately follows from
-  Equations (a) and (b). 
+  Equations (a) and (b). Equation (d) requires top-guards to have at
+  least as much guard consensus weight as the water level.
 
   Once Wgg_i is computed, we can compute Wmg_i = 1 - Wgg_i, which
   allocates to the middle position all the consensus weight that is left
@@ -239,7 +241,7 @@ Status: Open
   Most of the implementation of Waterfilling is on the directory
   authority side: only a few changes are needed on the client side and
   no change is needed on the relay side. A prototype implementation is
-  available at https://github.com/frochet/waterfilling. Here is how it
+  available at https://github.com/frochet/Waterfilling. Here is how it
   works:
 
   Every hour, directory authorities vote on a new consensus. Once the
@@ -254,15 +256,13 @@ Status: Open
   m lp08MLTivsSZPhpZQy88i8NPeBNx10tPKBpHZsM3gYM
   s Fast Guard HSDir Running Stable V2Dir Valid
   v Tor 0.2.6.7
-  w Bandwidth=10200
-  wfbw wgg=8029 wmg=1971.
+  w Bandwidth=10200 wgg=8029 
   r 4uthority3 PYnzXGQ+67m0WtO64qtJkwsUzME 1970-01-01 00:02:33 11.0.5.71
   9111 9112 
   m d8G2/8UQzAN3a9DixCtmaivhfUFTvlFKAxCAV1xHVKk
   s Authority Fast Guard HSDir Running Stable V2Dir Valid
   v Tor 0.2.6.7
-  w Bandwidth=1890
-  wfbw wgg=10000 wmg=0.
+  w Bandwidth=1890 wgg=10000
   ...(more relays)
 
   In this example, we see two relays having the Guard flag and their new
@@ -274,13 +274,61 @@ Status: Open
   consensus weight, below the water level, and fully uses it for guard
   traffic.
 
-  If no wgg or wmg weights are specified for a given relay, the
-  vanilla bandwidth-weights are used, as provided at the bottom of the
+  If no wgg weight is specified for a given relay, the vanilla
+  bandwidth-weights are used, as provided at the bottom of the
   consensus.
 
   Eventually, a modification of the client code is needed in order to
   parse and use the waterfilling weights. The changes are
   straightforward with a few lines of codes in existing functions.
+
+5.2 Implementation note
+  
+  The final implemention should contain the following features:
+  
+  *If implemented on directory side* :
+
+  - A new consensus method 
+  - Directory authorities need to use a stable sort for step 1) of
+    section 2. This is important for consensus weight remainder
+    redistribution.
+  - The weights must appear in the 'w' line (see
+    https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt#n2234).
+
+  *If implemented on clients*
+  
+  - Network-wide parameters to turnoff the algorithm and/or features
+  
+  *Common to dirauths or clients*:
+
+  - Current (prototype) implementation crashes when the water level
+    reaches the smallest relay of the consensus. This could happen with
+    small testing networks ~ Make sure to have a unit test that verifies
+    this case.
+  - We need a proper way to handle the remainder. Remainder happens
+    because the right water level matching the equation from section 2
+    always fall between two consensus weights. Best suggestion so far
+    would be to set the water level on the smaller relay. We will
+    compute weights following our equations and we will obtain a
+    remainder that can be spread over the high-bandwidth relays
+    (the spread is not done in the current implementation).
+
+5.3 Implementation on dirauths or clients?
+
+  Consensus changes on dirauths:
+  * need to use consensus methods
+  * require a 6-12 month deployment time
+  * increases the size of all directory documents
+  * change the whole network
+  * if designed carefully, can be turned off using a network-wide
+    parameter
+  
+  Weight changes on clients:
+  * require a 3-6 month deployment time
+  * can be deployed to small numbers of clients
+  * if designed carefully, can be turned off using a network-wide
+    parameter
+  * Does not increase the consensus diff size
 
 6 Deployment discussion
 
@@ -307,10 +355,22 @@ Status: Open
 
 7 Note
 
-Some important questions raised on the mailing list:
+  Some important questions raised on the mailing list:
 
-- How can we determine whether it is better for security in practice?
+  - What about onion service circuits?
+  
+  FR's answer:
+  Waterfilling uses the current bandwidth-weights logic as a basis and
+  they doesn't account for onion service circuits, hence it also ignores
+  this sort of traffic. Prop 265 tries to address that problem when
+  producing the bandwidth-weights. Since our method achieves the same
+  total consensus weight balance between position as the one produced by
+  bandwidth-weights, Waterfilling would directly inherit Prop 265's
+  properties if Prop 265 proposal is merged.
 
+  - How can we determine whether it is better for security in practice?
+  
+  FR's answer:
   Whether this proposal is indeed better for security can be
   summarized with the following fact: if the adversary wants to profile
   more users against a Tor network using this Proposal, she has to
@@ -321,22 +381,35 @@ Some important questions raised on the mailing list:
   Moreover, the paper linked to this proposal offers a detailed security
   analysis.
 
-- How can we determine if it is faster or slower in practice?
-
+  - How can we determine if it is faster or slower in practice?
+  
+  FR's answer:
   Well, if Shadow missed capturing some important performance impact
   within our simulations, then looking at the output of
   metrics.torproject.org after such proposal is deployed, as well as
   asking relay operators if they notice some burden is probably the best
   we can do.
  
-- How can we work out if someone is trying to game the system?
-
+  - How can we work out if someone is trying to game the system?
+  
+  FR's answer:
   The optimal strategy for an adversary is explained in the paper. It
   might be possible to detect an adversary applying the optimal
   strategy, since we know it but it was out of the scope of the paper.
   
   E.g., a bunch of new relays appearing with a consensus weight at the
   water level could be considered suspicious.
+
+  - If we reduce guard weights on large relays, does this slow down Tor
+    bootstrap? Does it slow down directory fetches in general?
+  
+  FR's anwser:
+  Assuming smallest guards have an higher latency in average, this
+  could indeed slow down directory fetches and maybe Tor bootstrap.
+  Collecting statistics should properly answer this question.
+
+  - Would it be sufficient to publish a small ratio instead? (See teor's
+    response developping wfbw calculation with small ratios)
 
 7.1 Unanswered questions
 
@@ -347,4 +420,17 @@ Some important questions raised on the mailing list:
 
   - How do we report on the new system?
 
+  - Feedback loop: 
+    1. Consensus weights on guards and middles change
+    2. Client use of guards and middles change
+    3. Bandwidth authority measurements of guards and middles change
+    4. Repeat from 1
+  
+    How does this existing feedback loop affect this proposal? Does it
+    increase or reduce the size of the guard and middle weight changes?
+
+  - Concern about this proposal that may overload small guards and
+    underload large guards, because it does not consider advertised
+    bandwidth.
+  
                                                                        
