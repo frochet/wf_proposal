@@ -267,7 +267,7 @@ Status: Open
 
   In this example, we see two relays having the Guard flag and their new
   waterfilling bandwidth-weights allocation given on the lines starting
-  with wfbw. The first relay has a high consensus weight (Bandwidth),
+  with 'w'. The first relay has a high consensus weight (Bandwidth),
   above the water level (was around 8k for this consensus), and shares
   that consensus weight between the guard and the middle positions, as
   indicated by the wgg and wmg variables.  The second relay has a lower
