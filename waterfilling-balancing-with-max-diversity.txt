@@ -15,17 +15,17 @@ Status: Open
   rotation is limited, the users are less likely to use a corrupted
   guard at some point in their communication. In the current design, the
   amount of traffic that a given guard sees is directly proportional to
-  the bandwidth that is provided by this guard. As a result, the few
-  guards offering the highest amount of bandwidth become very attractive
-  targets for an attacker.
+  the consensus weight that is provided by this guard. As a result, the
+  few guards offering the highest amount of consensus weight become very
+  attractive targets for an attacker.
 
   Waterfilling is a new path selection mechanism designed to make the
   guard selection even more efficient: if an adversary wants to profile
   more users, she has to increase her bandwidth _and_ increase the
   number of relays injected/hacked into the network.
 
-  Waterfilling mitigates the risks of end-to-end traffic correlation
-  by balancing the load as evenly as possible on endpoints of user
+  Waterfilling mitigates the risks of end-to-end traffic correlation by
+  balancing the load as evenly as possible on endpoints of user
   circuits. More precisely, waterfilling modifies the probability
   distribution according to which users select guard nodes my making
   that distribution closer to the uniform distribution, without
@@ -56,17 +56,16 @@ Status: Open
   using these relays in a way that is just proportional to their
   consensus weight. Such a change would make top relays less attractive
   targets to adversaries, and would increase the number of relays that
-  need to be
-  compromised in order to obtain a given probability of mounting a
-  successful correlation attack.
+  need to be compromised in order to obtain a given probability of
+  mounting a successful correlation attack.
 
   Our proposal only modifies the balance between the relays in a given
-  position in the network. It does not modify, and actually takes as
-  its starting point, any allocation mechanism used to decide the
-  consensus weight that is allocated in guard, middle and exit
-  positions.  As a consequence, the changes that we propose are quite
-  minimal in terms of code base and performance and, in particular, they
-  do not interfere with prop 265.
+  position in the network. It does not modify, and actually takes as its
+  starting point, any allocation mechanism used to decide the consensus
+  weight that is allocated in guard, middle and exit positions.  As a
+  consequence, the changes that we propose are quite minimal in terms of
+  code base and performance and, in particular, they do not interfere
+  with prop 265.
 
 2  Design
 
@@ -91,20 +90,20 @@ Status: Open
   _Proposal_: We use Tor's bandwidth-weight Wgg as the basis of
   Waterfilling. This Wgg, combined with the total consensus weight made
   available by all guards, defines the total consensus weight made
-  available in the guard position. In order to allocate this bandwidth,
-  the Waterfilling proposal proceeds by "raising the water level": it
-  requires all guard relays to devote to their guard role all the
-  consensus weight that they have, until a so-called "water level" is
-  reached.  This water level is positioned in such a way that the total
-  consensus weight provided in the guard position is exactly the same as
-  the one that is currently made available in the Tor network. 
+  available in the guard position. In order to allocate this consensus
+  weight, the Waterfilling proposal proceeds by "raising the water
+  level": it requires all guard relays to devote to their guard role all
+  the consensus weight that they have, until a so-called "water level"
+  is reached.  This water level is positioned in such a way that the
+  total consensus weight provided in the guard position is exactly the
+  same as the one that is currently made available in the Tor network. 
 
   As a result, guards offering a small amount of consensus weight, below
   the water level, will fully allocate their consensus weight to guard
   traffic, while all the guards offering a consensus weight that is
   higher than the water level will limit their guard consensus weight to
   the water level, and allocate the rest to the middle traffic (assuming
-  that they are not exit flagged as Exits). 
+  that they are not relays flagged as Exits). 
 
   Concretely, we compute the weight Wgg_i for each guard-flagged relay_i
   as follows:
@@ -376,7 +375,7 @@ Status: Open
   more users against a Tor network using this Proposal, she has to
   increase her consensus weight _and_ increase the number of IPs she
   uses in the network. And, this is not true for the current path
-  selection (she has to increase bandwidth).
+  selection (she has to increase her consensus weight).
 
   Moreover, the paper linked to this proposal offers a detailed security
   analysis.
