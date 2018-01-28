@@ -360,7 +360,7 @@ Status: Open
   
   FR's answer:
   Waterfilling uses the current bandwidth-weights logic as a basis and
-  they doesn't account for onion service circuits, hence it also ignores
+  they do not account for onion service circuits, hence it also ignores
   this sort of traffic. Prop 265 tries to address that problem when
   producing the bandwidth-weights. Since our method achieves the same
   total consensus weight balance between position as the one produced by
@@ -386,7 +386,7 @@ Status: Open
   Well, if Shadow missed capturing some important performance impact
   within our simulations, then looking at the output of
   metrics.torproject.org after such proposal is deployed, as well as
-  asking relay operators if they notice some burden is probably the best
+  asking relay operators if they notice some burden, is probably the best
   we can do.
  
   - How can we work out if someone is trying to game the system?
@@ -431,5 +431,5 @@ Status: Open
   - Concern about this proposal that may overload small guards and
     underload large guards, because it does not consider advertised
     bandwidth.
-  
+
                                                                        
