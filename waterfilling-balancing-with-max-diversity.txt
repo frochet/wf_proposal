@@ -27,7 +27,7 @@ Status: Open
   Waterfilling mitigates the risks of end-to-end traffic correlation by
   balancing the load as evenly as possible on endpoints of user
   circuits. More precisely, waterfilling modifies the probability
-  distribution according to which users select guard nodes my making
+  distribution according to which users select guard nodes by making
   that distribution closer to the uniform distribution, without
   impacting the performance of the Tor network.
 
@@ -281,6 +281,10 @@ Status: Open
   parse and use the waterfilling weights. The changes are
   straightforward with a few lines of codes in existing functions.
 
+5.1 Algorithm producing Waterfilling bandwidth-weights
+
+%TODO
+
 5.2 Implementation note
   
   The final implemention should contain the following features:
@@ -293,6 +297,9 @@ Status: Open
     redistribution.
   - The weights must appear in the 'w' line (see
     https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt#n2234).
+  
+  - Maybe applying proposal 276 weight rounding on the bandwidth-weights
+    to reduce the impact on the consensus diff. 
 
   *If implemented on clients*
   
@@ -406,18 +413,21 @@ Status: Open
   Assuming smallest guards have an higher latency in average, this
   could indeed slow down directory fetches and maybe Tor bootstrap.
   Collecting statistics should properly answer this question.
+  
+  Teor: We might still use classical bandwidth-weights for directory
+  fetches
 
   - Would it be sufficient to publish a small ratio instead? (See teor's
     response developping wfbw calculation with small ratios)
 
 7.1 Unanswered questions
 
-  - What about the feedback loop between this new allocation system
-  and the bandwidth authorities?
-
   - Should bandwidth authority clients use the new system?
 
   - How do we report on the new system?
+
+  - What about the feedback loop between this new allocation system and
+    the bandwidth authorities?
 
   - Feedback loop: 
     1. Consensus weights on guards and middles change
@@ -432,4 +442,30 @@ Status: Open
     underload large guards, because it does not consider advertised
     bandwidth.
 
+  - Does the waterfilling proposal make excessive load on guards worse,
+    by allocating more guard weight to lower capacity relays?  Is the
+    extra security worth the increased risk of failure?
+
+  - Does the waterfilling proposal make excessive load on middles
+    better, by allocating more middle weight to higher capacity relays?
+    Is there a cascading failure mode, where excess middle weight
+    overwhelms our top relays one by one? (It seems unlikely.)
+
+  - Can you redesign the proposal so there is some limit on the extra
+    middle load assigned to a guard? Or does this ruin the security
+    properties?
+
+  - Is there a compelling argument for security over network robustness?
+
+  - What about computing the weights on directory authority but
+    broadcasting only the "pivot" (the consensus weight at the water
+    level). Clients can then resume the computation and produce the
+    weights themselves with a reduced cost because they do not have to
+    search for that pivot.
+    Strength:
+      - The weight calculation would be O(n) on clients (n being the
+        size of the guard set) instead of O(n*log(n))
+      - No impact on consensus diff (except 1 line, the pivot)
+    Weakness:
+      - We still have O(n) divisions on clients
                                                                        
