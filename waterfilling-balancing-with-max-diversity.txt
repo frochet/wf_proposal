@@ -237,7 +237,9 @@ Status: Open
 
 5.1 Overview
 
-  Most of the implementation of Waterfilling is on the directory
+5.1.1 Early design
+
+  Most of the current implementation of Waterfilling is on the directory
   authority side: only a few changes are needed on the client side and
   no change is needed on the relay side. A prototype implementation is
   available at https://github.com/frochet/Waterfilling. Here is how it
@@ -281,29 +283,53 @@ Status: Open
   parse and use the waterfilling weights. The changes are
   straightforward with a few lines of codes in existing functions.
 
-5.1 Algorithm producing Waterfilling bandwidth-weights
+5.1.2 Teor's idea
+
+  After discussion on the mailing list, it turns out that there is two
+  important criteria we did not consider for this implementation:
+    1) Consensus diff size 
+    2) Cost of divisions 
+
+  The waterfilling bandwidth-weights add new information for every guard
+  of the consensus, and this information are re-computed every hour,
+  which leads to a large consensus diff. To solve this problem and to
+  avoid doing divisions on the client side, we come up with the
+  following strategy:
+  - The authorities do the calculation and put the water level as a
+    single line in the consensus (no more waterfilling bandwidth-weights
+    in the consensus). Algorithm in O(n*log(n)), see section 5.2.
+  - The clients can re-weights relays using a simple calculation:
+    if it is less than or equal to the water level then:
+      use the relay's weight as its guard weight
+      use 0 as its middle weight
+    otherwise:
+      use the water level as the relays's guard weight
+      use the relay's weight minus the waterfilling level as its middle
+      weight
+   This is O(n) on the client, executed at each new consensus, and
+   requires one comparison and one substraction in the worst case.
+
+
+5.2 Algorithm producing Waterfilling bandwidth-weights
 
 %TODO
 
-5.2 Implementation note
+5.3 Implementation note
   
   The final implemention should contain the following features:
   
-  *If implemented on directory side* :
+  *On directory side* :
 
   - A new consensus method 
   - Directory authorities need to use a stable sort for step 1) of
     section 2. This is important for consensus weight remainder
     redistribution.
-  - The weights must appear in the 'w' line (see
-    https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt#n2234).
-  
-  - Maybe applying proposal 276 weight rounding on the bandwidth-weights
-    to reduce the impact on the consensus diff. 
+  - Unit tests
 
   *If implemented on clients*
   
   - Network-wide parameters to turnoff the algorithm and/or features
+  - Unit tests
   
   *Common to dirauths or clients*:
 
@@ -318,23 +344,6 @@ Status: Open
     compute weights following our equations and we will obtain a
     remainder that can be spread over the high-bandwidth relays
     (the spread is not done in the current implementation).
-
-5.3 Implementation on dirauths or clients?
-
-  Consensus changes on dirauths:
-  * need to use consensus methods
-  * require a 6-12 month deployment time
-  * increases the size of all directory documents
-  * change the whole network
-  * if designed carefully, can be turned off using a network-wide
-    parameter
-  
-  Weight changes on clients:
-  * require a 3-6 month deployment time
-  * can be deployed to small numbers of clients
-  * if designed carefully, can be turned off using a network-wide
-    parameter
-  * Does not increase the consensus diff size
 
 6 Deployment discussion
 
@@ -457,15 +466,4 @@ Status: Open
 
   - Is there a compelling argument for security over network robustness?
 
-  - What about computing the weights on directory authority but
-    broadcasting only the "pivot" (the consensus weight at the water
-    level). Clients can then resume the computation and produce the
-    weights themselves with a reduced cost because they do not have to
-    search for that pivot.
-    Strength:
-      - The weight calculation would be O(n) on clients (n being the
-        size of the guard set) instead of O(n*log(n))
-      - No impact on consensus diff (except 1 line, the pivot)
-    Weakness:
-      - We still have O(n) divisions on clients
                                                                        
